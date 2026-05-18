@@ -4,6 +4,30 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from .models import BotSession, QueueItem, human_size
 
+STYLE_PRIMARY = "primary"
+STYLE_POSITIVE = "positive"
+STYLE_DESTRUCTIVE = "destructive"
+STYLE_SECONDARY = "secondary"
+
+
+def button(
+    text: str,
+    callback_data: str,
+    style: str | None = None,
+    icon_custom_emoji_id: str | None = None,
+) -> InlineKeyboardButton:
+    kwargs = {"text": text, "callback_data": callback_data}
+    if style:
+        kwargs["style"] = style
+    if icon_custom_emoji_id:
+        kwargs["icon_custom_emoji_id"] = icon_custom_emoji_id
+    try:
+        return InlineKeyboardButton(**kwargs)
+    except TypeError:
+        kwargs.pop("style", None)
+        kwargs.pop("icon_custom_emoji_id", None)
+        return InlineKeyboardButton(**kwargs)
+
 
 def home_text(session: BotSession, max_total_bytes: int) -> str:
     percent = (session.total_size / max_total_bytes * 100) if max_total_bytes else 0
@@ -48,16 +72,20 @@ def home_keyboard(session: BotSession) -> InlineKeyboardMarkup:
     can_compress = bool(session.items) and not session.busy
     rows = [
         [
-            InlineKeyboardButton("Queue", callback_data="queue"),
-            InlineKeyboardButton("Name", callback_data="set_name"),
+            button("Queue", callback_data="queue", style=STYLE_PRIMARY),
+            button("Name", callback_data="set_name", style=STYLE_SECONDARY),
         ],
         [
-            InlineKeyboardButton("Password", callback_data="set_password"),
-            InlineKeyboardButton("Mode", callback_data="mode"),
+            button("Password", callback_data="set_password", style=STYLE_SECONDARY),
+            button("Mode", callback_data="mode", style=STYLE_SECONDARY),
         ],
         [
-            InlineKeyboardButton("Clear", callback_data="clear"),
-            InlineKeyboardButton("Compress", callback_data="compress" if can_compress else "noop"),
+            button("Clear", callback_data="clear", style=STYLE_DESTRUCTIVE),
+            button(
+                "Compress",
+                callback_data="compress" if can_compress else "noop",
+                style=STYLE_POSITIVE if can_compress else STYLE_SECONDARY,
+            ),
         ],
     ]
     return InlineKeyboardMarkup(rows)
@@ -67,12 +95,16 @@ def queue_keyboard(session: BotSession) -> InlineKeyboardMarkup:
     rows = []
     for index, item in enumerate(session.items, start=1):
         label = f"{index}. {item.archive_name[:28]}"
-        rows.append([InlineKeyboardButton(label, callback_data=f"item:{item.id}")])
+        rows.append([button(label, callback_data=f"item:{item.id}", style=STYLE_PRIMARY)])
     rows.append(
         [
-            InlineKeyboardButton("Back", callback_data="home"),
-            InlineKeyboardButton("Clear", callback_data="clear"),
-            InlineKeyboardButton("Compress", callback_data="compress" if session.items else "noop"),
+            button("Back", callback_data="home", style=STYLE_SECONDARY),
+            button("Clear", callback_data="clear", style=STYLE_DESTRUCTIVE),
+            button(
+                "Compress",
+                callback_data="compress" if session.items else "noop",
+                style=STYLE_POSITIVE if session.items else STYLE_SECONDARY,
+            ),
         ]
     )
     return InlineKeyboardMarkup(rows)
@@ -82,14 +114,14 @@ def item_keyboard(item: QueueItem) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("Up", callback_data=f"move:{item.id}:-1"),
-                InlineKeyboardButton("Down", callback_data=f"move:{item.id}:1"),
+                button("Up", callback_data=f"move:{item.id}:-1", style=STYLE_SECONDARY),
+                button("Down", callback_data=f"move:{item.id}:1", style=STYLE_SECONDARY),
             ],
             [
-                InlineKeyboardButton("Rename", callback_data=f"rename:{item.id}"),
-                InlineKeyboardButton("Remove", callback_data=f"remove:{item.id}"),
+                button("Rename", callback_data=f"rename:{item.id}", style=STYLE_PRIMARY),
+                button("Remove", callback_data=f"remove:{item.id}", style=STYLE_DESTRUCTIVE),
             ],
-            [InlineKeyboardButton("Back", callback_data="queue")],
+            [button("Back", callback_data="queue", style=STYLE_SECONDARY)],
         ]
     )
 
@@ -101,14 +133,14 @@ def mode_keyboard(current: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton(label("auto"), callback_data="mode_set:auto"),
-                InlineKeyboardButton(label("7z"), callback_data="mode_set:7z"),
+                button(label("auto"), callback_data="mode_set:auto", style=STYLE_PRIMARY),
+                button(label("7z"), callback_data="mode_set:7z", style=STYLE_PRIMARY),
             ],
             [
-                InlineKeyboardButton(label("zip"), callback_data="mode_set:zip"),
-                InlineKeyboardButton(label("tar.gz"), callback_data="mode_set:tar.gz"),
+                button(label("zip"), callback_data="mode_set:zip", style=STYLE_PRIMARY),
+                button(label("tar.gz"), callback_data="mode_set:tar.gz", style=STYLE_PRIMARY),
             ],
-            [InlineKeyboardButton("Back", callback_data="home")],
+            [button("Back", callback_data="home", style=STYLE_SECONDARY)],
         ]
     )
 
@@ -116,6 +148,14 @@ def mode_keyboard(current: str) -> InlineKeyboardMarkup:
 def password_keyboard(has_password: bool) -> InlineKeyboardMarkup:
     rows = []
     if has_password:
-        rows.append([InlineKeyboardButton("Clear password", callback_data="clear_password")])
-    rows.append([InlineKeyboardButton("Back", callback_data="home")])
+        rows.append(
+            [
+                button(
+                    "Clear password",
+                    callback_data="clear_password",
+                    style=STYLE_DESTRUCTIVE,
+                )
+            ]
+        )
+    rows.append([button("Back", callback_data="home", style=STYLE_SECONDARY)])
     return InlineKeyboardMarkup(rows)
