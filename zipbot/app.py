@@ -29,12 +29,7 @@ log = logging.getLogger("zipbot")
 
 settings: Settings = load_settings()
 settings.work_dir.mkdir(parents=True, exist_ok=True)
-session = BotSession(
-    owner_id=settings.primary_owner_id,
-    work_root=settings.work_dir / str(settings.primary_owner_id),
-    compression_format=settings.default_format,
-    compression_level=settings.default_level,
-)
+sessions: dict[int, BotSession] = {}
 app = Client(
     "zipbot",
     api_id=settings.api_id,
@@ -44,7 +39,24 @@ app = Client(
 )
 
 
-def ensure_dirs() -> None:
+def session_for_user(user_id: int) -> BotSession:
+    if user_id not in sessions:
+        sessions[user_id] = BotSession(
+            owner_id=user_id,
+            work_root=settings.work_dir / str(user_id),
+            compression_format=settings.default_format,
+            compression_level=settings.default_level,
+        )
+    return sessions[user_id]
+
+
+def current_session(message: Message | CallbackQuery) -> BotSession:
+    if not message.from_user:
+        raise RuntimeError("Missing Telegram user on update")
+    return session_for_user(message.from_user.id)
+
+
+def ensure_dirs(session: BotSession) -> None:
     (session.work_root / "incoming").mkdir(parents=True, exist_ok=True)
     (session.work_root / "out").mkdir(parents=True, exist_ok=True)
 
@@ -64,7 +76,11 @@ async def reject_if_not_owner(message: Message | CallbackQuery) -> bool:
     return True
 
 
-async def show_home(target: Message | CallbackQuery, text: str | None = None) -> None:
+async def show_home(
+    target: Message | CallbackQuery,
+    session: BotSession,
+    text: str | None = None,
+) -> None:
     body = text or home_text(session, settings.max_total_bytes)
     keyboard = home_keyboard(session)
     try:
@@ -127,14 +143,16 @@ async def update_progress(current: int, total: int, message: Message, prefix: st
 async def start_handler(_: Client, message: Message) -> None:
     if await reject_if_not_owner(message):
         return
-    ensure_dirs()
-    await show_home(message)
+    session = current_session(message)
+    ensure_dirs(session)
+    await show_home(message, session)
 
 
 @app.on_message(filters.command("queue"))
 async def queue_command(_: Client, message: Message) -> None:
     if await reject_if_not_owner(message):
         return
+    session = current_session(message)
     await message.reply_text(
         queue_text(session, settings.max_total_bytes),
         reply_markup=queue_keyboard(session),
@@ -145,17 +163,19 @@ async def queue_command(_: Client, message: Message) -> None:
 async def cancel_handler(_: Client, message: Message) -> None:
     if await reject_if_not_owner(message):
         return
+    session = current_session(message)
     session.expecting = None
     session.expecting_item_id = None
-    await show_home(message, "Input cancelled.\n\n" + home_text(session, settings.max_total_bytes))
+    await show_home(message, session, "Input cancelled.\n\n" + home_text(session, settings.max_total_bytes))
 
 
 @app.on_message(filters.text & ~filters.command(["start", "help", "queue", "cancel"]))
 async def text_handler(_: Client, message: Message) -> None:
     if await reject_if_not_owner(message):
         return
+    session = current_session(message)
     if not session.expecting:
-        await show_home(message)
+        await show_home(message, session)
         return
 
     value = (message.text or "").strip()
@@ -166,7 +186,7 @@ async def text_handler(_: Client, message: Message) -> None:
 
     if expecting == "archive_name":
         session.archive_name = clean_filename(value, "archive")
-        await show_home(message, "Archive name updated.\n\n" + home_text(session, settings.max_total_bytes))
+        await show_home(message, session, "Archive name updated.\n\n" + home_text(session, settings.max_total_bytes))
         return
     if expecting == "password":
         session.password = value or None
@@ -186,14 +206,15 @@ async def text_handler(_: Client, message: Message) -> None:
             item.archive_name = clean_filename(value, item.archive_name)
             await message.reply_text(item_text(item), reply_markup=item_keyboard(item))
             return
-    await show_home(message)
+    await show_home(message, session)
 
 
 @app.on_message(filters.media)
 async def media_handler(client: Client, message: Message) -> None:
     if await reject_if_not_owner(message):
         return
-    ensure_dirs()
+    session = current_session(message)
+    ensure_dirs(session)
     if session.busy:
         await message.reply_text("Compression is running. Wait for it to finish before adding files.")
         return
@@ -254,6 +275,7 @@ async def media_handler(client: Client, message: Message) -> None:
 async def callback_handler(client: Client, query: CallbackQuery) -> None:
     if await reject_if_not_owner(query):
         return
+    session = current_session(query)
     data = query.data or ""
     await query.answer()
 
@@ -263,7 +285,7 @@ async def callback_handler(client: Client, query: CallbackQuery) -> None:
         await query.answer("Compression is running.", show_alert=True)
         return
     if data == "home":
-        await show_home(query)
+        await show_home(query, session)
         return
     if data == "queue":
         await query.message.edit_text(
@@ -273,7 +295,7 @@ async def callback_handler(client: Client, query: CallbackQuery) -> None:
         return
     if data == "clear":
         session.clear()
-        await show_home(query, "Queue cleared.\n\n" + home_text(session, settings.max_total_bytes))
+        await show_home(query, session, "Queue cleared.\n\n" + home_text(session, settings.max_total_bytes))
         return
     if data == "set_name":
         session.expecting = "archive_name"
@@ -288,7 +310,7 @@ async def callback_handler(client: Client, query: CallbackQuery) -> None:
         return
     if data == "clear_password":
         session.password = None
-        await show_home(query, "Password cleared.\n\n" + home_text(session, settings.max_total_bytes))
+        await show_home(query, session, "Password cleared.\n\n" + home_text(session, settings.max_total_bytes))
         return
     if data == "mode":
         await query.message.edit_text(
@@ -298,7 +320,7 @@ async def callback_handler(client: Client, query: CallbackQuery) -> None:
         return
     if data.startswith("mode_set:"):
         session.compression_format = data.split(":", 1)[1]
-        await show_home(query, "Compression mode updated.\n\n" + home_text(session, settings.max_total_bytes))
+        await show_home(query, session, "Compression mode updated.\n\n" + home_text(session, settings.max_total_bytes))
         return
     if data.startswith("item:"):
         item = session.get_item(data.split(":", 1)[1])
@@ -325,10 +347,10 @@ async def callback_handler(client: Client, query: CallbackQuery) -> None:
             await query.message.edit_text(item_text(item), reply_markup=item_keyboard(item))
         return
     if data == "compress":
-        await run_compression(client, query)
+        await run_compression(client, query, session)
 
 
-async def run_compression(client: Client, query: CallbackQuery) -> None:
+async def run_compression(client: Client, query: CallbackQuery, session: BotSession) -> None:
     if not session.items:
         await query.answer("Queue is empty.", show_alert=True)
         return
@@ -370,7 +392,7 @@ async def run_compression(client: Client, query: CallbackQuery) -> None:
         )
         session.clear()
         result.path.unlink(missing_ok=True)
-        await show_home(query, "Done. Queue cleared.\n\n" + home_text(session, settings.max_total_bytes))
+        await show_home(query, session, "Done. Queue cleared.\n\n" + home_text(session, settings.max_total_bytes))
     except Exception as exc:
         log.exception("compression failed")
         await query.message.edit_text(f"Compression failed: {exc}")
@@ -379,6 +401,7 @@ async def run_compression(client: Client, query: CallbackQuery) -> None:
 
 
 def main() -> None:
-    ensure_dirs()
+    for owner_id in settings.owner_ids:
+        ensure_dirs(session_for_user(owner_id))
     log.info("Starting ZipBot for owners %s", ", ".join(str(owner) for owner in settings.owner_ids))
     app.run()
