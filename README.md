@@ -11,13 +11,13 @@ A single-user Telegram bot for collecting files into a queue, reviewing the queu
   - Uses encrypted `.7z` when a password is set.
   - Uses fast stored `.zip` for already-compressed media when no password is set.
   - Uses high-compression `.7z` for mixed or compressible input.
-- Owner-only access through `OWNER_ID`.
+- Owner-only access through `OWNER_IDS`.
 
 ## Setup
 
 1. Create a bot with BotFather and get the bot token.
 2. Create Telegram API credentials at `my.telegram.org` and get `API_ID` and `API_HASH`.
-3. Copy `.env.example` to `.env` and fill in the values.
+3. Copy `.env.example` to `.env` and fill in the values. Use `OWNER_IDS=123,456` for multiple owners, or the older `OWNER_ID=123` form for one owner.
 4. Install dependencies:
 
 ```bash

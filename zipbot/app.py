@@ -30,8 +30,8 @@ log = logging.getLogger("zipbot")
 settings: Settings = load_settings()
 settings.work_dir.mkdir(parents=True, exist_ok=True)
 session = BotSession(
-    owner_id=settings.owner_id,
-    work_root=settings.work_dir / str(settings.owner_id),
+    owner_id=settings.primary_owner_id,
+    work_root=settings.work_dir / str(settings.primary_owner_id),
     compression_format=settings.default_format,
     compression_level=settings.default_level,
 )
@@ -51,7 +51,7 @@ def ensure_dirs() -> None:
 
 def is_owner(message: Message | CallbackQuery) -> bool:
     user = message.from_user
-    return bool(user and user.id == settings.owner_id)
+    return bool(user and user.id in settings.owner_ids)
 
 
 async def reject_if_not_owner(message: Message | CallbackQuery) -> bool:
@@ -380,5 +380,5 @@ async def run_compression(client: Client, query: CallbackQuery) -> None:
 
 def main() -> None:
     ensure_dirs()
-    log.info("Starting ZipBot for owner %s", settings.owner_id)
+    log.info("Starting ZipBot for owners %s", ", ".join(str(owner) for owner in settings.owner_ids))
     app.run()
