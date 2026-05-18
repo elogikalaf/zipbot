@@ -1,0 +1,2 @@
+"""Telegram compression bot package."""
+

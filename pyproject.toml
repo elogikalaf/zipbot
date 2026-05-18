@@ -1,0 +1,23 @@
+[project]
+name = "zipbot"
+version = "0.1.0"
+description = "Single-user Telegram bot for queueing and compressing files."
+requires-python = ">=3.11"
+dependencies = [
+    "pyrofork>=2.3.0",
+    "tgcrypto>=1.2.5",
+    "python-dotenv>=1.0.1",
+    "py7zr>=0.21.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.5.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
